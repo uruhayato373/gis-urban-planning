@@ -135,17 +135,56 @@ def save_split_gdfs_to_kml(split_gdfs, output_dir, coordinate_precision=6):
     print(f"\n全ての区域区分のKMLファイルが {output_dir} に保存されました。")
 
 
-for prefecture in prefecture_directories():
+def process_prefecture(prefecture: str):
+    print(f"\n処理開始: {prefecture}")
     root_directory = f"./shape_org/{prefecture}"
     file_list = find_shp_files(root_directory, "_senbiki")
-    print(prefecture)
     print(f"ファイル数: {len(file_list)}")
 
-    merged_gdf = merge_shapefiles(file_list)
-    print(f"結合後のGeoDataFrameのレコード数: {len(merged_gdf)}")
+    if not file_list:
+        print(
+            f"警告: {prefecture} にshapeファイルが見つかりません。処理をスキップします。"
+        )
+        return
 
-    split_gdfs = split_gdf(merged_gdf)
-    print(f"分割後のGeoDataFrameの数: {len(split_gdfs)}")
+    try:
+        merged_gdf = merge_shapefiles(file_list)
+        print(f"結合後のGeoDataFrameのレコード数: {len(merged_gdf)}")
 
-    output_directory = f"./kml_google_map/{prefecture}/区域区分"
-    save_split_gdfs_to_kml(split_gdfs, output_directory, coordinate_precision=7)
+        if merged_gdf.empty:
+            print(
+                f"警告: {prefecture} の結合されたGeoDataFrameが空です。処理をスキップします。"
+            )
+            return
+
+        split_gdfs = split_gdf(merged_gdf)
+        print(f"分割後のGeoDataFrameの数: {len(split_gdfs)}")
+
+        if not split_gdfs:
+            print(
+                f"警告: {prefecture} の分割後のGeoDataFrameが空です。処理をスキップします。"
+            )
+            return
+
+        output_directory = os.path.abspath(f"./kml_google_map/{prefecture}/区域区分")
+        save_split_gdfs_to_kml(split_gdfs, output_directory, coordinate_precision=7)
+
+    except Exception as e:
+        print(f"エラー: {prefecture} の処理中に例外が発生しました。")
+        print(f"エラー詳細: {str(e)}")
+        print("処理を次の都道府県に進めます。")
+
+
+def main():
+    prefectures = prefecture_directories()
+    total_prefectures = len(prefectures)
+
+    for i, prefecture in enumerate(prefectures, 1):
+        print(f"\n都道府県 {i}/{total_prefectures} 処理中")
+        process_prefecture(prefecture)
+
+    print("\n全ての都道府県の処理が完了しました。")
+
+
+if __name__ == "__main__":
+    main()
