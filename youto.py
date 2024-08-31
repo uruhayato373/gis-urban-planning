@@ -68,24 +68,53 @@ def create_style(style_id, color):
 
 
 def split_gdf(gdf):
-    # '区域区分'の一覧を取得
-    list = gdf["区域区分"].unique()
+    # '用途地域'の一覧を取得
+    list = gdf["用途地域"].unique()
 
-    # 各区域区分ごとにGeoDataFrameを分割
-    split_gdfs = {i: gdf[gdf["区域区分"] == i] for i in list}
+    # 各用途地域ごとにGeoDataFrameを分割
+    split_gdfs = {i: gdf[gdf["用途地域"] == i] for i in list}
 
     return split_gdfs
 
 
-def save_split_gdfs_to_kml(split_gdfs, output_dir, coordinate_precision=6):
-    print(f"開始: save_split_gdfs_to_kml, output_dir: {output_dir}")
-    print(f"split_gdfs の数: {len(split_gdfs)}")
-
+def save_kml(split_gdfs, output_dir, coordinate_precision=6):
     os.makedirs(output_dir, exist_ok=True)
 
-    total_gdfs = len(split_gdfs)
-    for i, (kubun, gdf) in enumerate(split_gdfs.items(), 1):
-        filename = f"{kubun.replace(' ', '_')}.kml"
+    # 用途地域ごとのスタイル定義
+    style_ids = {
+        "第一種低層住居専用地域": "style_1low",
+        "第二種低層住居専用地域": "style_2low",
+        "第一種中高層住居専用地域": "style_1mid",
+        "第二種中高層住居専用地域": "style_2mid",
+        "第一種住居地域": "style_1res",
+        "第二種住居地域": "style_2res",
+        "準住居地域": "style_semires",
+        "近隣商業地域": "style_neighbor",
+        "商業地域": "style_commercial",
+        "準工業地域": "style_semiindustrial",
+        "工業地域": "style_industrial",
+        "工業専用地域": "style_exclusiveindustrial",
+    }
+
+    # 色の定義
+    colors = {
+        "style_1low": "ff00ff00",  # 緑
+        "style_2low": "ff00ff80",  # 薄緑
+        "style_1mid": "ffffff00",  # 黄
+        "style_2mid": "ffffff80",  # 薄黄
+        "style_1res": "ffff8000",  # オレンジ
+        "style_2res": "ffff8080",  # 薄オレンジ
+        "style_semires": "ffff0000",  # 赤
+        "style_neighbor": "ffff00ff",  # マゼンタ
+        "style_commercial": "ffff80ff",  # 薄マゼンタ
+        "style_semiindustrial": "ff0080ff",  # 青
+        "style_industrial": "ff0000ff",  # 濃青
+        "style_exclusiveindustrial": "ff000080",  # 紺
+    }
+
+    # 分割されたGeoDataFrameの各キーに対してKMLを生成
+    for key, gdf in split_gdfs.items():
+        filename = f"{key.replace(' ', '_')}.kml"
         filepath = os.path.join(output_dir, filename)
 
         gdf_wgs84 = gdf.to_crs("EPSG:4326")
@@ -94,23 +123,22 @@ def save_split_gdfs_to_kml(split_gdfs, output_dir, coordinate_precision=6):
         document = ET.SubElement(kml, "Document")
 
         # スタイルの定義
-        style_ids = {"市街化区域": "style_shigaika", "市街化調整区域": "style_chosei"}
-        document.append(create_style(style_ids["市街化区域"], "ff0000ff"))  # 赤色
-        document.append(create_style(style_ids["市街化調整区域"], "ff00ff00"))  # 緑色
+        style_id = style_ids.get(key, f"style_{key}")
+        color = colors.get(style_id, "ff888888")  # デフォルト色はグレー
+        document.append(create_style(style_id, color))
 
         for _, row in gdf_wgs84.iterrows():
             geom = row["geometry"]
-            kuiki_kubun = row["区域区分"]
-            name = kuiki_kubun
+            name = str(key)
             description = "<![CDATA["
-            description += f"<h3>{kuiki_kubun}</h3>"
+            description += f"<h3>{key}</h3>"
             description += "<table border='1'><tr><th>属性</th><th>値</th></tr>"
             for col in gdf_wgs84.columns:
-                if col not in ["geometry", "区域区分"]:
+                if col != "geometry":
                     description += f"<tr><td>{col}</td><td>{row[col]}</td></tr>"
             description += "</table>]]>"
 
-            style_url = f"#{style_ids.get(kuiki_kubun, 'style_shigaika')}"
+            style_url = f"#{style_id}"
 
             if geom.geom_type == "Polygon":
                 coords = reduce_coordinate_precision(
@@ -129,15 +157,15 @@ def save_split_gdfs_to_kml(split_gdfs, output_dir, coordinate_precision=6):
         tree = ET.ElementTree(kml)
         tree.write(filepath, encoding="utf-8", xml_declaration=True)
 
-        print(f"保存完了 ({i}/{total_gdfs}): {filepath}")
+        print(f"保存完了: {filepath}")
 
-    print(f"\n全ての区域区分のKMLファイルが {output_dir} に保存されました。")
+    print(f"\n全てのKMLファイルが {output_dir} に保存されました。")
 
 
 def process_prefecture(prefecture: str):
     print(f"\n処理開始: {prefecture}")
     root_directory = f"./shape_org/{prefecture}"
-    file_list = find_shp_files(root_directory, "_senbiki")
+    file_list = find_shp_files(root_directory, "_youto")
     print(f"ファイル数: {len(file_list)}")
 
     if not file_list:
@@ -165,8 +193,8 @@ def process_prefecture(prefecture: str):
             )
             return
 
-        output_directory = os.path.abspath(f"./kml_google_map/{prefecture}/区域区分")
-        save_split_gdfs_to_kml(split_gdfs, output_directory, coordinate_precision=7)
+        output_directory = os.path.abspath(f"./kml_google_map/{prefecture}/用途地域")
+        save_kml(split_gdfs, output_directory, coordinate_precision=7)
 
     except Exception as e:
         print(f"エラー: {prefecture} の処理中に例外が発生しました。")
